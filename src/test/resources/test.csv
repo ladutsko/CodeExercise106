@@ -1,0 +1,13 @@
+Id,firstName,lastName,salary,managerId
+123,Joe,Doe,60000,
+124,Martin,Chekov,45000,123
+125,Bob,Ronstad,47000,123
+300,Alice,Hasacat,50000,124
+305,Brett,Hardleaf,34000,300
+306,William,Andrews,40000,300
+400,Chester,Richardson,75000,306
+401,Cherry,Davis,10000,400
+402,Clark,Douglas,20000,400
+403,Lyndon,Harris,30000,400
+404,Oscar,Morris,40000,400
+405,Lydia,Taylor,50000,400
