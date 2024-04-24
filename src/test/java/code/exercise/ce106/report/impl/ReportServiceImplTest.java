@@ -1,14 +1,9 @@
 package code.exercise.ce106.report.impl;
 
-import code.exercise.ce106.orgstructure.OrgStructureFactory;
 import code.exercise.ce106.orgstructure.model.Employee;
 import code.exercise.ce106.orgstructure.model.OrgStructure;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -17,94 +12,95 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ReportServiceImplTest {
 
-    private final PrintStream standardOut = System.out;
-    private final ByteArrayOutputStream outputStreamCaptor = new ByteArrayOutputStream();
+    private static final float THRESHOLD = 0.00001f;
 
-    @BeforeEach
-    public void setUp() {
-        System.setOut(new PrintStream(outputStreamCaptor));
-    }
+    private final ReportServiceImpl reportService = new ReportServiceImpl();
 
-    @AfterEach
-    public void tearDown() {
-        System.setOut(standardOut);
+    @Test
+    void shouldBuildReportResult() {
+        var joeDoe = new Employee("123", "Joe", "Doe", new BigDecimal("70000"), null);
+        var martinChekov = new Employee("124", "Martin", "Chekov", new BigDecimal("45000"), joeDoe.id());
+        var williamAndrews = new Employee("306", "William", "Andrews", new BigDecimal("40000"), "300");
+        var chesterRichardson = new Employee("400", "Chester", "Richardson", new BigDecimal("75000"), williamAndrews.id());
+        var cherryDavis = new Employee("401", "Cherry", "Davis", new BigDecimal("10000"), chesterRichardson.id());
+        var orgStructure = new OrgStructure(
+            Map.of(
+                joeDoe.id(), joeDoe,
+                martinChekov.id(), martinChekov,
+                "125", new Employee("125", "Bob", "Ronstad", new BigDecimal("47000"), joeDoe.id()),
+                "300", new Employee("300", "Alice", "Hasacat", new BigDecimal("50000"), martinChekov.id()),
+                "305", new Employee("305", "Brett", "Hardleaf", new BigDecimal("34000"), "300"),
+                williamAndrews.id(), williamAndrews,
+                chesterRichardson.id(), chesterRichardson,
+                cherryDavis.id(), cherryDavis
+            ),
+            Map.of(
+                joeDoe.id(), List.of(martinChekov.id(), "125"),
+                martinChekov.id(), List.of("300"),
+                "300", List.of("305", williamAndrews.id()),
+                williamAndrews.id(), List.of(chesterRichardson.id()),
+                chesterRichardson.id(), List.of(cherryDavis.id())
+            ),
+            "123"
+        );
+
+        var reportResult = reportService.report(orgStructure);
+
+        assertNotNull(reportResult);
+
+        var managersEarnLess = reportResult.managersEarnLess();
+
+        assertNotNull(managersEarnLess);
+        assertEquals(2, managersEarnLess.size());
+        assertEquals(williamAndrews, managersEarnLess.get(0).employee());
+        assertTrue(isFloatingEqual(55.56f, managersEarnLess.get(0).earnDiffPercent()));
+        assertEquals(martinChekov, managersEarnLess.get(1).employee());
+        assertTrue(isFloatingEqual(25f, managersEarnLess.get(1).earnDiffPercent()));
+
+        var managersEarnMore = reportResult.managersEarnMore();
+
+        assertNotNull(managersEarnMore);
+        assertEquals(2, managersEarnMore.size());
+        assertEquals(chesterRichardson, managersEarnMore.get(0).employee());
+        assertTrue(isFloatingEqual(400f, managersEarnMore.get(0).earnDiffPercent()));
+        assertEquals(joeDoe, managersEarnMore.get(1).employee());
+        assertTrue(isFloatingEqual(1.45f, managersEarnMore.get(1).earnDiffPercent()));
+
+        var employeesLevel = reportResult.employeesLevel();
+
+        assertNotNull(employeesLevel);
+        assertEquals(1, employeesLevel.size());
+
+        var employeeLevel = employeesLevel.get(0);
+
+        assertNotNull(employeeLevel);
+        assertEquals(cherryDavis, employeeLevel.employee());
+        assertEquals(1, employeeLevel.level());
     }
 
     @Test
-    void shouldPrintReportResult() {
-        var orgStructureFactory = new OrgStructureFactory() {
-            @Override
-            public OrgStructure createOrgStructure() {
-                return new OrgStructure(
-                    Map.of(
-                        "123", new Employee("123", "Joe", "Doe", new BigDecimal("70000"), null),
-                        "124", new Employee("124", "Martin", "Chekov", new BigDecimal("45000"), "123"),
-                        "125", new Employee("125", "Bob", "Ronstad", new BigDecimal("47000"), "123"),
-                        "300", new Employee("300", "Alice", "Hasacat", new BigDecimal("50000"), "124"),
-                        "305", new Employee("305", "Brett", "Hardleaf", new BigDecimal("34000"), "300"),
-                        "306", new Employee("306", "William", "Andrews", new BigDecimal("40000"), "300"),
-                        "400", new Employee("400", "Chester", "Richardson", new BigDecimal("75000"), "306"),
-                        "401", new Employee("401", "Cherry", "Davis", new BigDecimal("10000"), "400")
-                    ),
-                    Map.of(
-                        "123", List.of("124", "125"),
-                        "124", List.of("300"),
-                        "300", List.of("305", "306"),
-                        "306", List.of("400"),
-                        "400", List.of("401")
-                    ),
-                    "123"
-                );
-            }
-        };
-        var reportService = new ReportServiceImpl(orgStructureFactory);
+    void shouldBuildEmptyReportResult() {
+        var orgStructure = new OrgStructure(
+            Map.of(
+                "123", new Employee("123", "Joe", "Doe", new BigDecimal("70000"), null)
+            ),
+            Map.of(),
+            "123"
+        );
 
-        reportService.report();
+        var reportResult = reportService.report(orgStructure);
 
-        var output = outputStreamCaptor.toString().trim();
-        var earnLessIdx = output.indexOf("Managers earn less than they should:");
-        var earnMoreIdx = output.indexOf("Managers earn more than they should:");
-        var longLineIdx = output.indexOf("Employees have a reporting line which is too long:");
-
-        assertTrue(0 <= earnLessIdx);
-        assertTrue(0 <= earnMoreIdx);
-        assertTrue(0 <= longLineIdx);
-
-        assertTrue(earnMoreIdx > output.indexOf("25% Martin Chekov", earnLessIdx));
-        assertTrue(longLineIdx > output.indexOf("400% Chester Richardson", earnMoreIdx));
-        assertTrue(0 < output.indexOf("1 Cherry Davis", longLineIdx));
+        assertNotNull(reportResult);
+        assertNotNull(reportResult.employeesLevel());
+        assertTrue(reportResult.employeesLevel().isEmpty());
+        assertNotNull(reportResult.managersEarnLess());
+        assertTrue(reportResult.managersEarnLess().isEmpty());
+        assertNotNull(reportResult.managersEarnMore());
+        assertTrue(reportResult.managersEarnMore().isEmpty());
     }
 
-    @Test
-    void shouldPrintNoOne() {
-        var orgStructureFactory = new OrgStructureFactory() {
-            @Override
-            public OrgStructure createOrgStructure() {
-                return new OrgStructure(
-                    Map.of(
-                        "123", new Employee("123", "Joe", "Doe", new BigDecimal("70000"), null)
-                    ),
-                    Map.of(),
-                    "123"
-                );
-            }
-        };
-        var reportService = new ReportServiceImpl(orgStructureFactory);
-
-        reportService.report();
-
-        var output = outputStreamCaptor.toString().trim();
-        var earnLessIdx = output.indexOf("Managers earn less than they should:");
-        var earnMoreIdx = output.indexOf("Managers earn more than they should:");
-        var longLineIdx = output.indexOf("Employees have a reporting line which is too long:");
-
-        assertTrue(0 <= earnLessIdx);
-        assertTrue(0 <= earnMoreIdx);
-        assertTrue(0 <= longLineIdx);
-
-        assertTrue(earnMoreIdx > output.indexOf("no one", earnLessIdx));
-        assertTrue(longLineIdx > output.indexOf("no one", earnMoreIdx));
-        assertTrue(0 < output.indexOf("no one", longLineIdx));
+    private static boolean isFloatingEqual(float f1, float f2) {
+        return THRESHOLD > Math.abs(f1 - f2);
     }
 
 }

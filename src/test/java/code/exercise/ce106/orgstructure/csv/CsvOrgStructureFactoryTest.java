@@ -1,11 +1,10 @@
 package code.exercise.ce106.orgstructure.csv;
 
-import code.exercise.ce106.common.ApplicationException;
-import code.exercise.ce106.common.ErrorCode;
 import code.exercise.ce106.orgstructure.model.OrgStructure;
+import code.exercise.ce106.util.FileUtil;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,61 +15,12 @@ class CsvOrgStructureFactoryTest {
     private final EmployeeCsvRowConverter converter = new EmployeeCsvRowConverter();
 
     @Test
-    void shouldCreateOrgStructureWhenCSVFileHasHeader() {
-        var csvOrgStructureFactory = new CsvOrgStructureFactory("./src/test/resources/short.csv", true, converter);
+    void shouldCreateOrgStructureWhenCSVFileCorrect() {
+        var resource = FileUtil.createResource("./src/test/resources/short.csv");
+        var orgStructureFactory = new CsvOrgStructureFactory(resource, converter);
 
-        assertOrgStructure(csvOrgStructureFactory.createOrgStructure());
-    }
+        OrgStructure orgStructure = orgStructureFactory.createOrgStructure();
 
-    @Test
-    void shouldCreateOrgStructureWhenCSVFileWithoutHeader() {
-        var csvOrgStructureFactory =
-            new CsvOrgStructureFactory("./src/test/resources/short_without_header.csv", false, converter);
-
-        assertOrgStructure(csvOrgStructureFactory.createOrgStructure());
-    }
-
-    @Test
-    void shouldThrowExceptionWhenCatchIOException() {
-        // Because the converter is called inside a read-convert loop,
-        // we can use a converter mock to simulate an I/O error
-        var converterMock = new CsvRowConverter() {
-            @Override
-            public Object convert(String row) {
-                throwException(new IOException("Fake IO exception"));
-                return null;
-            }
-            @SuppressWarnings("unchecked")
-            private static <T extends Throwable> void throwException(Throwable e) throws T {
-                throw (T) e;
-            }
-        };
-        var csvOrgStructureFactory = new CsvOrgStructureFactory("./src/test/resources/short.csv", true, converterMock);
-
-        var e = assertThrowsExactly(ApplicationException.class, csvOrgStructureFactory::createOrgStructure);
-
-        assertEquals(ErrorCode.IO_EXCEPTION, e.getErrorCode());
-    }
-
-    @Test
-    void shouldThrowExceptionWhenNoExistsCSVFile() {
-        var csvOrgStructureFactory = new CsvOrgStructureFactory(UUID.randomUUID().toString(), true, converter);
-
-        var e = assertThrowsExactly(ApplicationException.class, csvOrgStructureFactory::createOrgStructure);
-
-        assertEquals(ErrorCode.FILE_NOT_FOUND, e.getErrorCode());
-    }
-
-    @Test
-    void shouldThrowExceptionWhenCSVFileIsBig() {
-        var csvOrgStructureFactory = new CsvOrgStructureFactory("./src/test/resources/1001.csv", true, converter);
-
-        var e = assertThrowsExactly(ApplicationException.class, csvOrgStructureFactory::createOrgStructure);
-
-        assertEquals(ErrorCode.ROWS_LIMIT, e.getErrorCode());
-    }
-
-    private void assertOrgStructure(OrgStructure orgStructure) {
         assertNotNull(orgStructure);
         assertEquals("123", orgStructure.ceoId());
 
@@ -92,6 +42,62 @@ class CsvOrgStructureFactoryTest {
         assertNotNull(subordinates);
         assertEquals(2, subordinates.size());
         assertTrue(subordinates.containsAll(List.of("124", "125")));
+    }
+
+    @Test
+    void shouldThrowExceptionWhenNoExistsCSVFile() {
+        var filename = UUID.randomUUID().toString();
+        var resource = FileUtil.createResource(filename);
+        var orgStructureFactory = new CsvOrgStructureFactory(resource, converter);
+
+        var e = assertThrowsExactly(UncheckedIOException.class,
+            orgStructureFactory::createOrgStructure);
+
+        assertTrue(e.getMessage().contains("java.io.FileNotFoundException: " + filename));
+    }
+
+    @Test
+    void shouldThrowExceptionWhenCSVFileIsBig() {
+        var resource = FileUtil.createResource("./src/test/resources/1001.csv");
+        var orgStructureFactory = new CsvOrgStructureFactory(resource, converter);
+
+        var e = assertThrowsExactly(UncheckedIOException.class,
+                orgStructureFactory::createOrgStructure);
+
+        assertTrue(e.getMessage().contains("java.io.IOException: Number of rows can be up to 1000"));
+    }
+
+    @Test
+    void souldThrowExceptionWhenCSVFileHasDoubleEmployeeId() {
+        var resource = FileUtil.createResource("./src/test/resources/double_employee.csv");
+        var orgStructureFactory = new CsvOrgStructureFactory(resource, converter);
+
+        var e = assertThrowsExactly(IllegalStateException.class,
+                orgStructureFactory::createOrgStructure);
+
+        assertTrue(e.getMessage().contains("Employee with Id '123' already exists"));
+    }
+
+    @Test
+    void souldThrowExceptionWhenCSVFileHasDoubleCEO() {
+        var resource = FileUtil.createResource("./src/test/resources/double_ceo.csv");
+        var orgStructureFactory = new CsvOrgStructureFactory(resource, converter);
+
+        var e = assertThrowsExactly(IllegalStateException.class,
+                orgStructureFactory::createOrgStructure);
+
+        assertTrue(e.getMessage().contains("CEO with Id '123' already defined"));
+    }
+
+    @Test
+    void souldThrowExceptionWhenCSVFileHasNoCEO() {
+        var resource = FileUtil.createResource("./src/test/resources/without_ceo.csv");
+        var orgStructureFactory = new CsvOrgStructureFactory(resource, converter);
+
+        var e = assertThrowsExactly(IllegalStateException.class,
+                orgStructureFactory::createOrgStructure);
+
+        assertTrue(e.getMessage().contains("CEO is undefined"));
     }
 
 }

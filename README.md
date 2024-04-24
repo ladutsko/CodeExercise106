@@ -40,14 +40,12 @@ bitbucket, etc.) so we can review your code.
 ## Assumptions
 
 - CSV file:
-    - it is consistent, correctness and without "holes" & leading/trailing spaces
-    - it is in default charset. Otherwise, see [How to run](#how-to-run) paragraph
-    - a header is presented by default. Otherwise, see [How to run](#how-to-run) paragraph
-    - cols are in fixed order. Especially in the case without a header
+    - it is in UTF-8
+    - cols are in fixed order
     - number of rows include a header
     - Id & managerId fields are string type because there is no enough information about data types
     - firstName & lastName are without quotes
-    - salary field is BigDecimal type because there is no enough information about the scale
+    - salary field is positive BigDecimal type because there is no enough information about the scale
 - Report:
     - report is in English
     - `no one` will be printed if some report result is empty
@@ -62,7 +60,6 @@ employee full name
     - report results delimiter is new line
 - Project:
     - maven is the latest version - on April 2024 it is 3.9.6
-    - error messages is in English
     - use recursion to traverse org structure because default stack size allows it. At worst, it is 1000 calls
     - scale is 4
     - rounding mode is half up
@@ -85,10 +82,4 @@ JaCoCo report is available here `./target/site/jacoco/index.html`
 
 ## How to run
 
-    java -jar ./target/ce106-1.0.0.jar [--without-header] <CSV file>
-
-It processes CSV file in the default charset. The default charset is determined during virtual-machine startup and
-typically depends upon the locale and charset of the underlying operating system. You can explicitly set their
-preferred `file.encoding` using the -D option. For example:
-
-    java -Dfile.encoding=UTF-8 -jar ./target/ce106-1.0.0.jar [--without-header] <CSV file>
+    java -jar ./target/ce106-1.0.0.jar <CSV file>

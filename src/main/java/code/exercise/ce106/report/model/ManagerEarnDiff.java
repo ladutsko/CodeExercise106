@@ -1,4 +1,4 @@
-package code.exercise.ce106.report.impl;
+package code.exercise.ce106.report.model;
 
 import code.exercise.ce106.orgstructure.model.Employee;
 

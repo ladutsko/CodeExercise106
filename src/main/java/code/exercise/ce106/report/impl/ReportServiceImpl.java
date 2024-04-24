@@ -1,15 +1,42 @@
 package code.exercise.ce106.report.impl;
 
-import code.exercise.ce106.orgstructure.OrgStructureFactory;
 import code.exercise.ce106.orgstructure.model.OrgStructure;
 import code.exercise.ce106.report.ReportService;
+import code.exercise.ce106.report.model.EmployeeLevel;
+import code.exercise.ce106.report.model.ManagerEarnDiff;
+import code.exercise.ce106.report.model.ReportResult;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
+/**
+ * This implementation of {@link ReportService} analyzes {@link OrgStructure} and identifies potential improvements.
+
+ * <p>According Board requirements every manager earns should be at least 20% more than the average salary of its
+ * direct subordinates, but no more than 50% more than that average.
+
+ * <p>Also it identifies all employees which have more than 4 managers between them and the CEO.
+ *
+ * <p>{@link ReportResult} contains the following:
+ * <ul>
+ *     <li>which managers earn less than they should, and by how much</li>
+ *     <li>which managers earn more than they should, and by how much</li>
+ *     <li>which employees have a reporting line which is too long, and by how much</li>
+ * </ul>
+ *
+ * <h5>Assumptions</h5>
+ * <ul>
+ *     <li>use recursion to traverse org structure because default stack size allows it. At worst, it is 1000 calls</li>
+ *     <li>information about managers which earn less/more than should contains a diff in percentage of how much they
+ * should and manager full name</li>
+*      <li>information about employees which reporting line is too long contains a count of extra levels and
+ * employee full name</li>
+ *     <li>scale is 4</li>
+ *     <li>rounding mode is half up</li>
+ * </ul>
+ */
 public class ReportServiceImpl implements ReportService {
 
     private static final float EARN_AT_LEAST_MORE_PERCENT_THRESHOLD = 20f;
@@ -27,113 +54,56 @@ public class ReportServiceImpl implements ReportService {
     private static final BigDecimal EARN_NO_MORE_FACTOR = BigDecimal.ONE.add(
         BigDecimal.valueOf(EARN_NO_MORE_PERCENT_THRESHOLD).divide(HUNDRED, SCALE, ROUNDING_MODE));
 
-    private static final Comparator<EmployeeLevel> EMPLOYEE_LEVEL_COMPARATOR =
-        Comparator.comparingInt(EmployeeLevel::level).reversed();
-    private static final Comparator<ManagerEarnDiff> MANAGER_EARN_DIFF_COMPARATOR =
-        Comparator.comparingDouble(ManagerEarnDiff::earnDiffPercent).reversed();
-
-    private static final String INDENT = "  ";
-
-    private final OrgStructureFactory orgStructureFactory;
-
-    public ReportServiceImpl(OrgStructureFactory orgStructureFactory) {
-        this.orgStructureFactory = orgStructureFactory;
-    }
-
     @Override
-    public void report() {
-        var employeeLevels = new ArrayList<EmployeeLevel>();
-        var managerEarnLess = new ArrayList<ManagerEarnDiff>();
-        var managerEarnMore = new ArrayList<ManagerEarnDiff>();
+    public ReportResult report(OrgStructure orgStructure) {
+        var employeesLevel = new ArrayList<EmployeeLevel>();
+        var managersEarnLess = new ArrayList<ManagerEarnDiff>();
+        var managersEarnMore = new ArrayList<ManagerEarnDiff>();
 
-        var orgStructure = orgStructureFactory.createOrgStructure();
-        orgStructureTravers(orgStructure, orgStructure.ceoId(), 0, employeeLevels, managerEarnLess, managerEarnMore);
+        orgStructureTravers(orgStructure, orgStructure.ceoId(), 0, employeesLevel, managersEarnLess, managersEarnMore);
 
-        printResult(employeeLevels, managerEarnLess, managerEarnMore);
+        return new ReportResult(employeesLevel, managersEarnLess, managersEarnMore);
     }
 
     private void orgStructureTravers(OrgStructure orgStructure, String managerId, int level,
-                                     List<EmployeeLevel> employeeLevels, List<ManagerEarnDiff> managerEarnLess,
-                                     List<ManagerEarnDiff> managerEarnMore) {
+                                     List<EmployeeLevel> employeesLevel, List<ManagerEarnDiff> managersEarnLess,
+                                     List<ManagerEarnDiff> managersEarnMore) {
         var employee = orgStructure.employees().get(managerId);
 
         if (LEVEL_THRESHOLD < level) {
-            employeeLevels.add(new EmployeeLevel(employee, level - LEVEL_THRESHOLD));
+            employeesLevel.add(new EmployeeLevel(employee, level - LEVEL_THRESHOLD));
         }
         
-        List<String> subordinates = orgStructure.subordination().get(managerId);
+        var subordinates = orgStructure.subordination().get(managerId);
         if (null == subordinates) {
             return;
         }
         
-        int nextLevel = level + 1;
-        BigDecimal sum = BigDecimal.ZERO;
+        var nextLevel = level + 1;
+        var sum = BigDecimal.ZERO;
 
-        for (String id : subordinates) {
-            orgStructureTravers(orgStructure, id, nextLevel, employeeLevels, managerEarnLess, managerEarnMore);
+        for (var id : subordinates) {
+            orgStructureTravers(orgStructure, id, nextLevel, employeesLevel, managersEarnLess, managersEarnMore);
 
             var subordinate = orgStructure.employees().get(id);
             sum = sum.add(subordinate.salary());
         }
 
-        BigDecimal avg = sum.divide(BigDecimal.valueOf(subordinates.size()), SCALE, ROUNDING_MODE);
+        var avg = sum.divide(BigDecimal.valueOf(subordinates.size()), SCALE, ROUNDING_MODE);
 
-        BigDecimal atLeastMore = avg.multiply(EARN_AT_LEAST_MORE_FACTOR);
+        var atLeastMore = avg.multiply(EARN_AT_LEAST_MORE_FACTOR);
         if (0 > employee.salary().compareTo(atLeastMore)) {
-            float diffPercent = employee.salary().divide(atLeastMore, SCALE, ROUNDING_MODE)
+            var diffPercent = employee.salary().divide(atLeastMore, SCALE, ROUNDING_MODE)
                 .subtract(BigDecimal.ONE).multiply(HUNDRED).floatValue();
-            managerEarnLess.add(new ManagerEarnDiff(employee, Math.abs(diffPercent)));
+            managersEarnLess.add(new ManagerEarnDiff(employee, Math.abs(diffPercent)));
         } else {
-            BigDecimal noMore = avg.multiply(EARN_NO_MORE_FACTOR);
+            var noMore = avg.multiply(EARN_NO_MORE_FACTOR);
             if (0 < employee.salary().compareTo(noMore)) {
-                float diffPercent = employee.salary().divide(noMore, SCALE, ROUNDING_MODE)
+                var diffPercent = employee.salary().divide(noMore, SCALE, ROUNDING_MODE)
                     .subtract(BigDecimal.ONE).multiply(HUNDRED).floatValue();
-                managerEarnMore.add(new ManagerEarnDiff(employee, diffPercent));
+                managersEarnMore.add(new ManagerEarnDiff(employee, diffPercent));
             }
         }
     }
 
-    private void printResult(List<EmployeeLevel> employeeLevels, List<ManagerEarnDiff> managerEarnLess,
-                             List<ManagerEarnDiff> managerEarnMore) {
-        System.out.println("Managers earn less than they should:");
-        if (managerEarnLess.isEmpty()) {
-            printEmptyResultMessage();
-        } else {
-            managerEarnLess
-                .stream()
-                .sorted(MANAGER_EARN_DIFF_COMPARATOR)
-                .forEach(entry -> System.out.printf("%s%3.0f%% %s %s%n", INDENT, entry.earnDiffPercent(),
-                    entry.employee().firstName(), entry.employee().lastName()));
-        }
-
-        System.out.println();
-
-        System.out.println("Managers earn more than they should:");
-        if (managerEarnMore.isEmpty()) {
-            printEmptyResultMessage();
-        } else {
-            managerEarnMore
-                .stream()
-                .sorted(MANAGER_EARN_DIFF_COMPARATOR)
-                .forEach(entry -> System.out.printf("%s%3.0f%% %s %s%n", INDENT, entry.earnDiffPercent(),
-                    entry.employee().firstName(), entry.employee().lastName()));
-        }
-
-        System.out.println();
-
-        System.out.println("Employees have a reporting line which is too long:");
-        if (employeeLevels.isEmpty()) {
-            printEmptyResultMessage();
-        } else {
-            employeeLevels
-                .stream()
-                .sorted(EMPLOYEE_LEVEL_COMPARATOR)
-                .forEach(entry -> System.out.printf("%s%3d %s %s%n", INDENT, entry.level(),
-                    entry.employee().firstName(), entry.employee().lastName()));
-        }
-    }
-
-    private void printEmptyResultMessage() {
-        System.out.printf("%sno one%n", INDENT);
-    }
 }

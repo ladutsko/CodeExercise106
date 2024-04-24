@@ -1,41 +1,38 @@
 package code.exercise.ce106;
 
-import code.exercise.ce106.common.ApplicationException;
-import code.exercise.ce106.common.ErrorCode;
-import code.exercise.ce106.context.arguments.ArgumentsConstants;
-import code.exercise.ce106.context.arguments.impl.ArgumentsParserImpl;
-import code.exercise.ce106.context.impl.ApplicationContextFactoryImpl;
+import code.exercise.ce106.orgstructure.csv.CsvOrgStructureFactory;
+import code.exercise.ce106.orgstructure.csv.EmployeeCsvRowConverter;
+import code.exercise.ce106.report.console.ConsoleReportOutputService;
+import code.exercise.ce106.report.impl.ReportServiceImpl;
+import code.exercise.ce106.util.FileUtil;
 
 public final class Application {
 
+    private static final int PARAM_COUNT = 1;
+
+    private static final int CSV_FILENAME_PARAM_IDX = 0;
+
+    private static final String USAGE_MESSAGE = "java " + Application.class.getName() + " <CSV file>%n";
+
     private Application() {
-        // There are no use cases for this class where you need to build an object. You can only use static items.
-        // I am preventing you from even trying to build an object of this class.
     }
 
     public static void main(String[] args) {
-        try {
-            var argumentParser = new ArgumentsParserImpl();
-            var arguments = argumentParser.parse(args);
-            if (null == arguments.filename()) {
-                System.out.printf("java %s [%s] <CSV file>%n", Application.class.getName(),
-                    ArgumentsConstants.WITHOUT_HEADER_ARG);
-                return;
-            }
-
-            var contextBuilder = new ApplicationContextFactoryImpl(arguments);
-            var context = contextBuilder.createApplicationContext();
-            var reportService = context.reportService();
-            reportService.report();
-        } catch (Exception e) {
-            ApplicationException ae;
-            if (e instanceof ApplicationException aex) {
-                ae = aex;
-            } else {
-                ae = new ApplicationException(ErrorCode.UNEXPECTED_EXCEPTION, e, e.getMessage());
-            }
-            ae.printStackTrace();
+        if (PARAM_COUNT != args.length || args[CSV_FILENAME_PARAM_IDX].isBlank()) {
+            System.out.printf(USAGE_MESSAGE);
+            return;
         }
+
+        var resource = FileUtil.createResource(args[CSV_FILENAME_PARAM_IDX].trim());
+        var converter = new EmployeeCsvRowConverter();
+        var orgStructureFactory = new CsvOrgStructureFactory(resource, converter);
+        var orgStructure = orgStructureFactory.createOrgStructure();
+
+        var reportService = new ReportServiceImpl();
+        var reportResult = reportService.report(orgStructure);
+
+        var reportOutputService = new ConsoleReportOutputService();
+        reportOutputService.print(reportResult);
     }
 
 }

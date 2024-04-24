@@ -1,80 +1,104 @@
 package code.exercise.ce106.orgstructure.csv;
 
-import code.exercise.ce106.common.ApplicationException;
-import code.exercise.ce106.common.ErrorCode;
 import code.exercise.ce106.orgstructure.OrgStructureFactory;
 import code.exercise.ce106.orgstructure.model.Employee;
 import code.exercise.ce106.orgstructure.model.OrgStructure;
 
-import java.io.FileNotFoundException;
-import java.io.FileReader;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.LineNumberReader;
-import java.nio.charset.Charset;
+import java.io.Reader;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
+/**
+ * This implementation of {@link OrgStructureFactory} creates {@link OrgStructure} from CSV file.
+ * File structure looks like this:
+ * <pre>
+ *     Id,firstName,lastName,salary,managerId
+ *     123,Joe,Doe,60000,
+ *     124,Martin,Chekov,45000,123
+ *     125,Bob,Ronstad,47000,123
+ *     300,Alice,Hasacat,50000,124
+ *     305,Brett,Hardleaf,34000,300
+ * </pre>
+ * Each line represents an employee (CEO included). CEO has no manager specified. Number of rows can be up to 1000.
+ *
+ * <h5>Assumptions</h5>
+ * <ul>
+ *     <li>number of rows include a header</li>
+ * </ul>
+ */
 public class CsvOrgStructureFactory implements OrgStructureFactory {
 
     private static final int ROWS_LIMIT = 1000;
 
-    private final String filename;
-    private final boolean hasHeader;
-    private final CsvRowConverter<Employee> converter;
+    private static final String ROWS_LIMIT_EXCEPTION_MSG = "Number of rows can be up to " + ROWS_LIMIT;
+    private static final String CEO_IS_UNDEFINED = "CEO is undefined";
 
-    public CsvOrgStructureFactory(String filename, boolean hasHeader, CsvRowConverter<Employee> converter) {
-        this.filename = filename;
-        this.hasHeader = hasHeader;
+    private static final String EMPLOYEE_ALREADY_EXISTS_FORMAT_STR = "Employee with Id '%s' already exists";
+    private static final String CEO_ALREADY_DEFINED_FORMAT_STR = "CEO with Id '%s' already defined";
+
+    private final Supplier<Reader> resource;
+    private final Function<String, Employee> converter;
+
+    public CsvOrgStructureFactory(Supplier<Reader> resource, Function<String, Employee> converter) {
+        this.resource = resource;
         this.converter = converter;
     }
 
     @Override
     public OrgStructure createOrgStructure() {
-        var employees = new HashMap<String, Employee>();
-        var subordination = new HashMap<String, List<String>>();
-        String ceoId = null;
+        try (var reader = new LineNumberReader(resource.get())) {
+            var employees = new HashMap<String, Employee>();
+            var subordination = new HashMap<String, List<String>>();
+            String ceoId = null;
 
-        try (var reader = new LineNumberReader(new FileReader(filename, Charset.defaultCharset()))) {
-            try {
-                String row;
+            skipHeader(reader);
 
-                if (hasHeader) {
-                    // Skip header
-                    row = reader.readLine();
+            for (var line = reader.readLine(); null != line; line = reader.readLine()) {
+                if (ROWS_LIMIT < reader.getLineNumber()) {
+                    throw new IOException(ROWS_LIMIT_EXCEPTION_MSG);
                 }
 
-                row = reader.readLine();
-                while (null != row) {
-                    if (ROWS_LIMIT < reader.getLineNumber()) {
-                        throw new ApplicationException(ErrorCode.ROWS_LIMIT, ROWS_LIMIT, filename);
-                    }
-
-                    var employee = converter.convert(row);
-                    employees.put(employee.id(), employee);
-
-                    if (null == employee.managerId()) {
-                        ceoId = employee.id();
-                    } else {
-                        subordination
-                            .computeIfAbsent(employee.managerId(), key -> new ArrayList<>())
-                            .add(employee.id());
-                    }
-
-                    row = reader.readLine();
+                if (line.isBlank()) {
+                    continue;
                 }
-            } catch (IOException e) {
-                throw new ApplicationException(ErrorCode.IO_EXCEPTION,
-                    filename, reader.getLineNumber() + 1, e.getMessage())
-                    .suppress(e);
+
+                var employee = converter.apply(line);
+                if (null != employees.putIfAbsent(employee.id(), employee)) {
+                    throw new IllegalStateException(EMPLOYEE_ALREADY_EXISTS_FORMAT_STR.formatted(employee.id()));
+                }
+
+                if (null == employee.managerId()) {
+                    if (null != ceoId) {
+                        throw new IllegalStateException(CEO_ALREADY_DEFINED_FORMAT_STR.formatted(ceoId));
+                    }
+
+                    ceoId = employee.id();
+                } else {
+                    subordination
+                        .computeIfAbsent(employee.managerId(), key -> new ArrayList<>())
+                        .add(employee.id());
+                }
             }
-        } catch (FileNotFoundException e) {
-            throw new ApplicationException(ErrorCode.FILE_NOT_FOUND, filename).suppress(e);
-        } catch (IOException e) {
-            // Just "swallow" the exception on close the file
-        }
 
-        return new OrgStructure(employees, subordination, ceoId);
+            if (null == ceoId) {
+                throw new IllegalStateException(CEO_IS_UNDEFINED);
+            }
+
+            return new OrgStructure(employees, subordination, ceoId);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void skipHeader(BufferedReader reader) throws IOException {
+        reader.readLine();
     }
 
 }
